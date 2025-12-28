@@ -72,6 +72,10 @@ def init_tables():
                       WHERE table_name='drawings' AND column_name='drawing_type') THEN
             ALTER TABLE drawings ADD COLUMN drawing_type VARCHAR(100);
         END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name='drawings' AND column_name='processed_at') THEN
+            ALTER TABLE drawings ADD COLUMN processed_at TIMESTAMP;
+        END IF;
         IF EXISTS (SELECT 1 FROM information_schema.columns 
                   WHERE table_name='drawings' AND column_name='file_type') THEN
             ALTER TABLE drawings DROP COLUMN file_type;
@@ -90,9 +94,37 @@ def init_tables():
         quantity DECIMAL,
         unit VARCHAR(50),
         dimensions TEXT,
-        material VARCHAR(100),
+        location VARCHAR(255),
+        confidence_score DECIMAL,
+        unit_cost DECIMAL,
+        total_cost DECIMAL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    
+    -- Add missing columns to elements table
+    DO $$ 
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name='elements' AND column_name='location') THEN
+            ALTER TABLE elements ADD COLUMN location VARCHAR(255);
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name='elements' AND column_name='confidence_score') THEN
+            ALTER TABLE elements ADD COLUMN confidence_score DECIMAL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name='elements' AND column_name='unit_cost') THEN
+            ALTER TABLE elements ADD COLUMN unit_cost DECIMAL;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name='elements' AND column_name='total_cost') THEN
+            ALTER TABLE elements ADD COLUMN total_cost DECIMAL;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns 
+                  WHERE table_name='elements' AND column_name='material') THEN
+            ALTER TABLE elements DROP COLUMN material;
+        END IF;
+    END $$;
     """
     
     try:

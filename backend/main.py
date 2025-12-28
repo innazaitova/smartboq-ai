@@ -381,10 +381,15 @@ async def get_project(
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
-        # Get drawings (ORM with relationship)
+        # Get drawings (ORM)
         drawings = db.query(Drawing).filter(
             Drawing.project_id == project_id
         ).all()
+        
+        # Count elements separately
+        element_count = db.query(Element).join(Drawing).filter(
+            Drawing.project_id == project_id
+        ).count()
         
         return {
             "project": {
@@ -408,12 +413,13 @@ async def get_project(
                 "uploaded_at": d.uploaded_at,
                 "processed_at": d.processed_at
             } for d in drawings],
-            "quantities_count": sum(len(d.elements) for d in drawings)
+            "quantities_count": element_count
         }
     
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error getting project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

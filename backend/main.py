@@ -22,11 +22,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ai-engine'))
 
 from auth import get_current_user, create_access_token
 from database import get_db
-from drawing_processor import DrawingProcessor
-from ai_analyzer import AIAnalyzer
-from quantity_calculator import QuantityCalculator
-from cost_estimator import CostEstimator
-from boq_generator import BOQGenerator
+# Temporarily disabled - requires PyMuPDF
+# from drawing_processor import DrawingProcessor
+# from ai_analyzer import AIAnalyzer
+# from quantity_calculator import QuantityCalculator
+# from cost_estimator import CostEstimator
+# from boq_generator import BOQGenerator
 
 app = FastAPI(
     title="QuantiBot AI API",
@@ -45,12 +46,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize components
-drawing_processor = DrawingProcessor()
-ai_analyzer = AIAnalyzer()
-quantity_calculator = QuantityCalculator()
-cost_estimator = CostEstimator()
-boq_generator = BOQGenerator()
+# Initialize components (temporarily disabled)
+# drawing_processor = DrawingProcessor()
+# ai_analyzer = AIAnalyzer()
+# quantity_calculator = QuantityCalculator()
+# cost_estimator = CostEstimator()
+# boq_generator = BOQGenerator()
 
 
 # ============================================================================
@@ -370,8 +371,8 @@ async def upload_drawings(
         )
         db.commit()
         
-        # Trigger background processing
-        background_tasks.add_task(process_project_drawings, project_id)
+        # AI processing temporarily disabled
+        # background_tasks.add_task(process_project_drawings, project_id)
         
         return {
             "message": f"{len(files)} drawing(s) uploaded successfully",
@@ -417,8 +418,8 @@ async def analyze_project(
         )
         db.commit()
         
-        # Start background processing
-        background_tasks.add_task(process_project_drawings, project_id)
+        # AI processing temporarily disabled
+        # background_tasks.add_task(process_project_drawings, project_id)
         
         return {
             "message": "Analysis started",
@@ -593,7 +594,8 @@ async def download_boq(
 # BACKGROUND TASKS
 # ============================================================================
 
-async def process_project_drawings(project_id: int):
+# Temporarily disabled - requires PyMuPDF
+# async def process_project_drawings(project_id: int):
     """Background task to process drawings with AI"""
     from sqlalchemy import text
     db = next(get_db())
@@ -698,8 +700,8 @@ async def trigger_processing(
         )
         db.commit()
         
-        # Trigger background processing
-        background_tasks.add_task(process_project_drawings, project_id)
+        # AI processing temporarily disabled
+        # background_tasks.add_task(process_project_drawings, project_id)
         
         return {
             "message": "AI analysis started",

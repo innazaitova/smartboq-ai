@@ -55,12 +55,32 @@ def init_tables():
         id SERIAL PRIMARY KEY,
         project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
         file_name VARCHAR(255) NOT NULL,
-        file_path VARCHAR(500) NOT NULL,
-        file_type VARCHAR(50),
-        file_size INTEGER,
+        file_url VARCHAR(500) NOT NULL,
+        drawing_type VARCHAR(100),
         status VARCHAR(50) DEFAULT 'pending',
         uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    
+    -- Add file_url column if table exists with old schema
+    DO $$ 
+    BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns 
+                  WHERE table_name='drawings' AND column_name='file_path') THEN
+            ALTER TABLE drawings RENAME COLUMN file_path TO file_url;
+        END IF;
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name='drawings' AND column_name='drawing_type') THEN
+            ALTER TABLE drawings ADD COLUMN drawing_type VARCHAR(100);
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns 
+                  WHERE table_name='drawings' AND column_name='file_type') THEN
+            ALTER TABLE drawings DROP COLUMN file_type;
+        END IF;
+        IF EXISTS (SELECT 1 FROM information_schema.columns 
+                  WHERE table_name='drawings' AND column_name='file_size') THEN
+            ALTER TABLE drawings DROP COLUMN file_size;
+        END IF;
+    END $$;
 
     -- Elements table
     CREATE TABLE IF NOT EXISTS elements (

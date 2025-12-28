@@ -840,21 +840,6 @@ async def process_project_drawings(project_id: int, db_session: Session):
     finally:
         db_session.close()
 
-        import traceback
-        traceback.print_exc()
-        
-        # Update project status to error
-        try:
-            db.execute(
-                text("UPDATE projects SET status = :status WHERE id = :id"),
-                {"status": "error", "id": project_id}
-            )
-            db.commit()
-        except:
-            pass
-    finally:
-        db.close()
-
 
 @app.post("/api/projects/{project_id}/process")
 async def trigger_processing(

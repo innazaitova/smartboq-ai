@@ -285,16 +285,16 @@ async def get_project(
             {"project_id": project_id}
         ).fetchall()
         
-        # Get quantities count
-        quantities = db.execute(
-            text("SELECT COUNT(*) as count FROM quantities WHERE project_id = :project_id"),
-            {"project_id": project_id}
-        ).fetchone()
+        # Get elements count (temporarily disabled)
+        # quantities = db.execute(
+        #     text("SELECT COUNT(*) as count FROM quantities WHERE project_id = :project_id"),
+        #     {"project_id": project_id}
+        # ).fetchone()
         
         return {
             "project": dict(project._mapping),
             "drawings": [dict(d._mapping) for d in drawings],
-            "quantities_count": quantities[0]
+            "quantities_count": 0
         }
     
     except HTTPException:

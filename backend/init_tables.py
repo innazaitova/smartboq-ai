@@ -27,6 +27,15 @@ def init_tables():
         subscription_tier VARCHAR(50) DEFAULT 'trial',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
+    
+    -- Add subscription_tier column if it doesn't exist (for existing tables)
+    DO $$ 
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns 
+                      WHERE table_name='users' AND column_name='subscription_tier') THEN
+            ALTER TABLE users ADD COLUMN subscription_tier VARCHAR(50) DEFAULT 'trial';
+        END IF;
+    END $$;
 
     -- Projects table
     CREATE TABLE IF NOT EXISTS projects (

@@ -3,19 +3,40 @@ QuantiBot AI - Main FastAPI Application
 Handles API endpoints for drawing upload, processing, and BOQ generation
 """
 
-from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks
+from fastapi import FastAPI, File, UploadFile, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import List, Optional
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import os
 import sys
 from datetime import datetime
 import uuid
 from dotenv import load_dotenv
+import logging
+
+# Set up logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Validate required environment variables
+REQUIRED_ENV_VARS = ["DATABASE_URL", "JWT_SECRET_KEY"]
+missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
+
+if missing_vars:
+    logger.error(f"Missing required environment variables: {', '.join(missing_vars)}")
+    raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
+
+logger.info("All required environment variables are set")
 
 # Initialize database tables on startup
 try:
@@ -36,11 +57,18 @@ from database import get_db
 # from cost_estimator import CostEstimator
 # from boq_generator import BOQGenerator
 
+# Rate limiting setup
+limiter = Limiter(key_func=get_remote_address)
+
 app = FastAPI(
     title="QuantiBot AI API",
     description="AI-Powered Quantity Surveying & Cost Estimation",
     version="1.0.0"
 )
+
+# Add rate limit handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # CORS configuration
 allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
@@ -69,6 +97,26 @@ class UserRegister(BaseModel):
     email: EmailStr
     password: str
     full_name: str
+    
+    @field_validator('password')
+    @classmethod
+    def validate_password(cls, v):
+        if len(v) < 8:
+            raise ValueError('Password must be at least 8 characters long')
+        if not any(char.isdigit() for char in v):
+            raise ValueError('Password must contain at least one digit')
+        if not any(char.isupper() for char in v):
+            raise ValueError('Password must contain at least one uppercase letter')
+        return v
+    
+    @field_validator('full_name')
+    @classmethod
+    def validate_name(cls, v):
+        if len(v) < 2:
+            raise ValueError('Name must be at least 2 characters long')
+        if len(v) > 100:
+            raise ValueError('Name must be less than 100 characters')
+        return v.strip()
 
 
 class UserLogin(BaseModel):
@@ -81,6 +129,30 @@ class ProjectCreate(BaseModel):
     project_type: str
     location: str
     area_sqft: Optional[float] = None
+    
+    @field_validator('project_name')
+    @classmethod
+    def validate_project_name(cls, v):
+        if len(v) < 3:
+            raise ValueError('Project name must be at least 3 characters long')
+        if len(v) > 200:
+            raise ValueError('Project name must be less than 200 characters')
+        return v.strip()
+    
+    @field_validator('project_type')
+    @classmethod
+    def validate_project_type(cls, v):
+        allowed_types = ['residential', 'commercial', 'industrial', 'infrastructure', 'other']
+        if v.lower() not in allowed_types:
+            raise ValueError(f'Project type must be one of: {", ".join(allowed_types)}')
+        return v.lower()
+    
+    @field_validator('area_sqft')
+    @classmethod
+    def validate_area(cls, v):
+        if v is not None and (v <= 0 or v > 10000000):
+            raise ValueError('Area must be between 0 and 10,000,000 sq ft')
+        return v
 
 
 class ProjectResponse(BaseModel):
@@ -106,9 +178,12 @@ class ProcessingStatus(BaseModel):
 # ============================================================================
 
 @app.post("/api/auth/register")
-async def register_user(user: UserRegister, db = Depends(get_db)):
+@limiter.limit("5/minute")
+async def register_user(request: Request, user: UserRegister, db = Depends(get_db)):
     """Register a new user account"""
     try:
+        logger.info(f"Registration attempt for email: {user.email}")
+        
         # Check if user exists
         from sqlalchemy import text
         existing = db.execute(
@@ -117,6 +192,7 @@ async def register_user(user: UserRegister, db = Depends(get_db)):
         ).fetchone()
         
         if existing:
+            logger.warning(f"Registration failed: Email already exists - {user.email}")
             raise HTTPException(status_code=400, detail="Email already registered")
         
         # Hash password using bcrypt directly
@@ -136,22 +212,25 @@ async def register_user(user: UserRegister, db = Depends(get_db)):
         )
         db.commit()
         
+        logger.info(f"User registered successfully: {user.email}")
+        
         return {"message": "User registered successfully", "email": user.email}
     
     except HTTPException:
         raise
     except Exception as e:
         db.rollback()
-        print(f"Registration error: {str(e)}")  # Debug logging
-        import traceback
-        traceback.print_exc()  # Print full traceback
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Registration error for {user.email}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error during registration")
 
 
 @app.post("/api/auth/login")
-async def login_user(user: UserLogin, db = Depends(get_db)):
+@limiter.limit("10/minute")
+async def login_user(request: Request, user: UserLogin, db = Depends(get_db)):
     """Login and receive JWT token"""
     try:
+        logger.info(f"Login attempt for email: {user.email}")
+        
         # Get user from database
         from sqlalchemy import text
         result = db.execute(
@@ -160,6 +239,7 @@ async def login_user(user: UserLogin, db = Depends(get_db)):
         ).fetchone()
         
         if not result:
+            logger.warning(f"Login failed: User not found - {user.email}")
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
         # Convert result to dict
@@ -172,10 +252,13 @@ async def login_user(user: UserLogin, db = Depends(get_db)):
         # Verify password using bcrypt directly
         import bcrypt
         if not bcrypt.checkpw(user.password.encode('utf-8'), db_user['password_hash'].encode('utf-8')):
+            logger.warning(f"Login failed: Invalid password - {user.email}")
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
         # Generate token
         access_token = create_access_token(data={"sub": user.email, "id": db_user['id']})
+        
+        logger.info(f"User logged in successfully: {user.email}")
         
         return {
             "access_token": access_token,
@@ -187,7 +270,8 @@ async def login_user(user: UserLogin, db = Depends(get_db)):
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Login error for {user.email}: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Internal server error during login")
 
 
 @app.get("/api/auth/me")
@@ -206,7 +290,9 @@ async def get_current_user_info(current_user = Depends(get_current_user)):
 # ============================================================================
 
 @app.post("/api/projects", response_model=ProjectResponse)
+@limiter.limit("20/minute")
 async def create_project(
+    request: Request,
     project: ProjectCreate,
     current_user = Depends(get_current_user),
     db = Depends(get_db)
@@ -308,7 +394,9 @@ async def get_project(
 # ============================================================================
 
 @app.post("/api/projects/{project_id}/drawings")
+@limiter.limit("10/minute")
 async def upload_drawings(
+    request: Request,
     project_id: int,
     files: List[UploadFile] = File(...),
     background_tasks: BackgroundTasks = BackgroundTasks(),
@@ -328,10 +416,26 @@ async def upload_drawings(
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
+        # Validate number of files
+        if len(files) > 10:
+            raise HTTPException(status_code=400, detail="Maximum 10 files per upload")
+        
         uploaded_files = []
         
         for file in files:
-            # Validate file type
+            # Read file content first to check size
+            content = await file.read()
+            file_size = len(content)
+            
+            # Validate file size (25MB max)
+            MAX_FILE_SIZE = 25 * 1024 * 1024  # 25MB in bytes
+            if file_size > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"File {file.filename} exceeds 25MB limit"
+                )
+            
+            # Validate file type by extension
             allowed_extensions = ['.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg']
             file_ext = os.path.splitext(file.filename)[1].lower()
             
@@ -341,6 +445,14 @@ async def upload_drawings(
                     detail=f"Unsupported file type: {file_ext}"
                 )
             
+            # Basic content validation by checking file headers
+            if file_ext == '.pdf' and not content.startswith(b'%PDF'):
+                raise HTTPException(status_code=400, detail=f"Invalid PDF file: {file.filename}")
+            elif file_ext in ['.png'] and not content.startswith(b'\x89PNG'):
+                raise HTTPException(status_code=400, detail=f"Invalid PNG file: {file.filename}")
+            elif file_ext in ['.jpg', '.jpeg'] and not content.startswith(b'\xff\xd8\xff'):
+                raise HTTPException(status_code=400, detail=f"Invalid JPEG file: {file.filename}")
+            
             # Generate unique filename
             unique_filename = f"{uuid.uuid4()}{file_ext}"
             file_path = f"temp_processing/{project_id}/{unique_filename}"
@@ -348,8 +460,9 @@ async def upload_drawings(
             # Save file
             os.makedirs(f"temp_processing/{project_id}", exist_ok=True)
             with open(file_path, "wb") as f:
-                content = await file.read()
                 f.write(content)
+            
+            logger.info(f"File uploaded: {file.filename} ({file_size} bytes) for project {project_id}")
             
             # Store in database
             db.execute(
@@ -365,11 +478,12 @@ async def upload_drawings(
             
             uploaded_files.append({
                 "filename": file.filename,
-                "size": len(content),
+                "size": file_size,
                 "status": "uploaded"
             })
         
         db.commit()
+        logger.info(f"Successfully uploaded {len(uploaded_files)} files for project {project_id}")
         
         # Update project status
         db.execute(

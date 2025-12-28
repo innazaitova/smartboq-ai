@@ -41,6 +41,7 @@ logger.info("All required environment variables are set")
 # Import ORM models and database utilities
 from models import User, Project, Drawing, Element
 from sqlalchemy.orm import Session
+from email_service import email_service
 
 # Initialize database tables on startup
 try:
@@ -212,6 +213,12 @@ async def register_user(request: Request, user: UserRegister, db = Depends(get_d
         
         logger.info(f"User registered successfully: {user.email}")
         
+        # Send welcome email (non-blocking)
+        try:
+            await email_service.send_welcome_email(user.email, user.full_name)
+        except Exception as email_error:
+            logger.warning(f"Failed to send welcome email to {user.email}: {str(email_error)}")
+        
         return {"message": "User registered successfully", "email": user.email}
     
     except HTTPException:
@@ -298,6 +305,17 @@ async def create_project(
         db.add(new_project)
         db.commit()
         db.refresh(new_project)
+        
+        # Send project created email (non-blocking)
+        try:
+            await email_service.send_project_created_email(
+                current_user['email'],
+                current_user.get('full_name', 'User'),
+                new_project.project_name,
+                new_project.id
+            )
+        except Exception as email_error:
+            logger.warning(f"Failed to send project created email: {str(email_error)}")
         
         return ProjectResponse(
             id=new_project.id,

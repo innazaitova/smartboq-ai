@@ -17,6 +17,13 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv()
 
+# Initialize database tables on startup
+try:
+    from init_tables import init_tables
+    init_tables()
+except Exception as e:
+    print(f"Database initialization skipped: {e}")
+
 # Add ai-engine directory to Python path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ai-engine'))
 

@@ -1,19 +1,21 @@
 """
 Drawing Processor - Handles PDF/DWG/Image processing
+Lightweight version using pypdf (pure Python, no compilation)
 """
 
-import fitz  # PyMuPDF
+from pypdf import PdfReader
 from PIL import Image
 import os
 from typing import List, Dict, Any, Tuple
 import re
+import io
 
 
 class DrawingProcessor:
-    """Process construction drawings (PDF, DWG, images)"""
+    """Process construction drawings (PDF, images)"""
     
     def __init__(self):
-        self.supported_formats = ['.pdf', '.dwg', '.dxf', '.png', '.jpg', '.jpeg']
+        self.supported_formats = ['.pdf', '.png', '.jpg', '.jpeg']
         self.temp_dir = "temp_processing"
         os.makedirs(self.temp_dir, exist_ok=True)
     
@@ -33,35 +35,28 @@ class DrawingProcessor:
             return self._process_pdf(file_path)
         elif file_ext in ['.png', '.jpg', '.jpeg']:
             return self._process_image(file_path)
-        elif file_ext in ['.dwg', '.dxf']:
-            return self._process_cad(file_path)
         else:
-            raise ValueError(f"Unsupported file format: {file_ext}")
+            raise ValueError(f"Unsupported file format: {file_ext}. Supported: PDF, PNG, JPG")
     
     def _process_pdf(self, pdf_path: str) -> Dict[str, Any]:
-        """Process PDF drawing"""
-        doc = fitz.open(pdf_path)
+        """Process PDF drawing using pypdf"""
+        reader = PdfReader(pdf_path)
         
         result = {
             "file_path": pdf_path,
             "file_type": "pdf",
-            "num_pages": len(doc),
+            "num_pages": len(reader.pages),
             "pages": [],
             "extracted_text": "",
             "scale": None
         }
         
-        for page_num in range(len(doc)):
-            page = doc[page_num]
-            
+        for page_num, page in enumerate(reader.pages):
             # Extract text
-            text = page.get_text()
+            text = page.extract_text() or ""
             result["extracted_text"] += text + "\n"
             
-            # Extract images from page
-            image_path = self._extract_page_as_image(page, page_num)
-            
-            # Detect scale
+            # Detect scale from text
             scale = self._detect_scale(text)
             if scale and not result["scale"]:
                 result["scale"] = scale
@@ -69,35 +64,25 @@ class DrawingProcessor:
             # Detect drawing type
             drawing_type = self._detect_drawing_type(text)
             
+            # Get page dimensions
+            mediabox = page.mediabox
+            width = float(mediabox.width)
+            height = float(mediabox.height)
+            
             page_info = {
                 "page_number": page_num + 1,
                 "text": text,
-                "image_path": image_path,
                 "scale": scale,
                 "drawing_type": drawing_type,
                 "dimensions": {
-                    "width": page.rect.width,
-                    "height": page.rect.height
+                    "width": width,
+                    "height": height
                 }
             }
             
             result["pages"].append(page_info)
         
-        doc.close()
-        return result
-    
-    def _extract_page_as_image(self, page, page_num: int) -> str:
-        """Extract PDF page as high-resolution image"""
-        # Render at high DPI for better quality
-        mat = fitz.Matrix(3, 3)  # 3x zoom = 216 DPI
-        pix = page.get_pixmap(matrix=mat)
-        
-        # Save image
-        image_path = f"{self.temp_dir}/page_{page_num}.png"
-        pix.save(image_path)
-        
-        return image_path
-    
+        return result    
     def _process_image(self, image_path: str) -> Dict[str, Any]:
         """Process image file"""
         img = Image.open(image_path)
@@ -147,13 +132,9 @@ class DrawingProcessor:
             return result
             
         except Exception as e:
-            # Fallback: Convert to image if possible
-            return {
-                "file_path": cad_path,
-                "file_type": "cad",
-                "error": f"CAD processing failed: {str(e)}",
-                "note": "Consider converting to PDF for better results"
-            }
+            return result
+        
+        return result
     
     def _detect_scale(self, text: str) -> str:
         """Detect drawing scale from text"""

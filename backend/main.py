@@ -55,12 +55,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'ai-engine'))
 
 from auth import get_current_user, create_access_token
 from database import get_db
-# Temporarily disabled - requires PyMuPDF
-# from drawing_processor import DrawingProcessor
-# from ai_analyzer import AIAnalyzer
-# from quantity_calculator import QuantityCalculator
-# from cost_estimator import CostEstimator
-# from boq_generator import BOQGenerator
+
+# Import AI processing modules (now using lightweight pypdf)
+from drawing_processor import DrawingProcessor
+from ai_analyzer import AIAnalyzer
+from quantity_calculator import QuantityCalculator
+from cost_estimator import CostEstimator
+from boq_generator import BOQGenerator
+
+logger.info("AI processing modules loaded successfully")
 
 # Rate limiting setup
 limiter = Limiter(key_func=get_remote_address)
@@ -86,12 +89,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize components (temporarily disabled)
-# drawing_processor = DrawingProcessor()
-# ai_analyzer = AIAnalyzer()
-# quantity_calculator = QuantityCalculator()
-# cost_estimator = CostEstimator()
-# boq_generator = BOQGenerator()
+# Initialize AI processing components
+drawing_processor = DrawingProcessor()
+ai_analyzer = AIAnalyzer()
+quantity_calculator = QuantityCalculator()
+cost_estimator = CostEstimator()
+boq_generator = BOQGenerator()
+
+logger.info("AI processing components initialized successfully")
 
 
 # ============================================================================
@@ -507,8 +512,8 @@ async def upload_drawings(
         project.status = "processing"
         db.commit()
         
-        # AI processing temporarily disabled
-        # background_tasks.add_task(process_project_drawings, project_id)
+        # Trigger AI processing in background
+        background_tasks.add_task(process_project_drawings, project_id, db)
         
         return {
             "message": f"{len(files)} drawing(s) uploaded successfully",
@@ -727,72 +732,114 @@ async def download_boq(
 
 
 # ============================================================================
+# ============================================================================
 # BACKGROUND TASKS
 # ============================================================================
 
-# Temporarily disabled - requires PyMuPDF
-# async def process_project_drawings(project_id: int):
+async def process_project_drawings(project_id: int, db_session: Session):
     """Background task to process drawings with AI"""
-    from sqlalchemy import text
-    db = next(get_db())
-    
     try:
-        print(f"Starting AI analysis for project {project_id}...")
+        logger.info(f"Starting AI analysis for project {project_id}...")
         
-        # Get all drawings for this project
-        drawings = db.execute(
-            text("SELECT * FROM drawings WHERE project_id = :project_id"),
-            {"project_id": project_id}
-        ).fetchall()
+        # Get all drawings for this project (ORM)
+        drawings = db_session.query(Drawing).filter(
+            Drawing.project_id == project_id
+        ).all()
         
         if not drawings:
-            print(f"No drawings found for project {project_id}")
+            logger.warning(f"No drawings found for project {project_id}")
             return
         
         total_elements = []
         
         # Process each drawing
         for drawing in drawings:
-            drawing_dict = dict(drawing._mapping)
-            file_path = drawing_dict['file_url']
+            logger.info(f"Analyzing drawing: {drawing.file_name}")
             
-            print(f"Analyzing drawing: {drawing_dict['file_name']}")
-            
-            # Analyze with AI
-            result = ai_analyzer.analyze_drawing(file_path, drawing_dict.get('drawing_type', 'plan'))
-            
-            if result['success']:
-                elements = result.get('elements', [])
-                total_elements.extend(elements)
+            try:
+                # Process with drawing processor
+                processed_data = drawing_processor.process_file(drawing.file_url)
                 
-                # Update drawing status
-                db.execute(
-                    text("UPDATE drawings SET status = :status WHERE id = :id"),
-                    {"status": "analyzed", "id": drawing_dict['id']}
+                # Analyze with AI
+                result = ai_analyzer.analyze_drawing(
+                    drawing.file_url,
+                    drawing.drawing_type,
+                    processed_data
                 )
-                db.commit()
                 
-                print(f"Found {len(elements)} elements in {drawing_dict['file_name']}")
+                if result['success']:
+                    elements = result.get('elements', [])
+                    total_elements.extend(elements)
+                    
+                    # Save elements to database (ORM)
+                    for elem_data in elements:
+                        new_element = Element(
+                            drawing_id=drawing.id,
+                            element_type=elem_data.get('type', 'unknown'),
+                            quantity=elem_data.get('quantity', 0),
+                            unit=elem_data.get('unit', 'units'),
+                            dimensions=str(elem_data.get('dimensions', {})),
+                            location=elem_data.get('location'),
+                            confidence_score=elem_data.get('confidence', 0.0)
+                        )
+                        db_session.add(new_element)
+                    
+                    # Update drawing status
+                    drawing.status = "analyzed"
+                    drawing.processed_at = datetime.now()
+                    db_session.commit()
+                    
+                    logger.info(f"Found {len(elements)} elements in {drawing.file_name}")
+                else:
+                    logger.error(f"Error analyzing {drawing.file_name}: {result.get('error')}")
+                    drawing.status = "error"
+                    db_session.commit()
+                    
+            except Exception as e:
+                logger.error(f"Error processing drawing {drawing.id}: {str(e)}", exc_info=True)
+                drawing.status = "error"
+                db_session.commit()
+                continue
+        
+        # Update project status (ORM)
+        project = db_session.query(Project).filter(Project.id == project_id).first()
+        if project:
+            if total_elements:
+                project.status = "completed"
+                logger.info(f"Project {project_id} completed with {len(total_elements)} elements")
+                
+                # Send completion email
+                try:
+                    user = db_session.query(User).filter(User.id == project.user_id).first()
+                    if user:
+                        await email_service.send_drawing_processed_email(
+                            user.email,
+                            user.full_name,
+                            project.project_name,
+                            project.id,
+                            len(total_elements)
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to send completion email: {str(e)}")
             else:
-                print(f"Error analyzing {drawing_dict['file_name']}: {result.get('error')}")
-        
-        # Update project status
-        if total_elements:
-            db.execute(
-                text("UPDATE projects SET status = :status WHERE id = :id"),
-                {"status": "completed", "id": project_id}
-            )
-        else:
-            db.execute(
-                text("UPDATE projects SET status = :status WHERE id = :id"),
-                {"status": "error", "id": project_id}
-            )
-        db.commit()
-        
-        print(f"Project {project_id} processing complete! Total elements: {len(total_elements)}")
+                project.status = "error"
+                logger.error(f"Project {project_id} completed with no elements detected")
+            
+            db_session.commit()
         
     except Exception as e:
-        print(f"Error processing project {project_id}: {str(e)}")
+        logger.error(f"Error processing project {project_id}: {str(e)}", exc_info=True)
+        # Update project status to error
+        try:
+            project = db_session.query(Project).filter(Project.id == project_id).first()
+            if project:
+                project.status = "error"
+                db_session.commit()
+        except:
+            pass
+    finally:
+        db_session.close()
+
         import traceback
         traceback.print_exc()
         

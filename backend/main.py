@@ -38,6 +38,10 @@ if missing_vars:
 
 logger.info("All required environment variables are set")
 
+# Import ORM models and database utilities
+from models import User, Project, Drawing, Element
+from sqlalchemy.orm import Session
+
 # Initialize database tables on startup
 try:
     from init_tables import init_tables
@@ -184,12 +188,8 @@ async def register_user(request: Request, user: UserRegister, db = Depends(get_d
     try:
         logger.info(f"Registration attempt for email: {user.email}")
         
-        # Check if user exists
-        from sqlalchemy import text
-        existing = db.execute(
-            text("SELECT id FROM users WHERE email = :email"), 
-            {"email": user.email}
-        ).fetchone()
+        # Check if user exists (ORM)
+        existing = db.query(User).filter(User.email == user.email).first()
         
         if existing:
             logger.warning(f"Registration failed: Email already exists - {user.email}")
@@ -199,18 +199,16 @@ async def register_user(request: Request, user: UserRegister, db = Depends(get_d
         import bcrypt
         password_hash = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
         
-        # Create user
-        db.execute(
-            text("""INSERT INTO users (email, password_hash, full_name, subscription_tier)
-               VALUES (:email, :password_hash, :full_name, :tier)"""),
-            {
-                "email": user.email,
-                "password_hash": password_hash,
-                "full_name": user.full_name,
-                "tier": "trial"
-            }
+        # Create user (ORM)
+        new_user = User(
+            email=user.email,
+            password_hash=password_hash,
+            full_name=user.full_name,
+            subscription_tier="trial"
         )
+        db.add(new_user)
         db.commit()
+        db.refresh(new_user)
         
         logger.info(f"User registered successfully: {user.email}")
         
@@ -231,40 +229,29 @@ async def login_user(request: Request, user: UserLogin, db = Depends(get_db)):
     try:
         logger.info(f"Login attempt for email: {user.email}")
         
-        # Get user from database
-        from sqlalchemy import text
-        result = db.execute(
-            text("SELECT id, email, password_hash FROM users WHERE email = :email"),
-            {"email": user.email}
-        ).fetchone()
+        # Get user from database (ORM)
+        db_user = db.query(User).filter(User.email == user.email).first()
         
-        if not result:
+        if not db_user:
             logger.warning(f"Login failed: User not found - {user.email}")
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
-        # Convert result to dict
-        db_user = {
-            "id": result[0],
-            "email": result[1],
-            "password_hash": result[2]
-        }
-        
         # Verify password using bcrypt directly
         import bcrypt
-        if not bcrypt.checkpw(user.password.encode('utf-8'), db_user['password_hash'].encode('utf-8')):
+        if not bcrypt.checkpw(user.password.encode('utf-8'), db_user.password_hash.encode('utf-8')):
             logger.warning(f"Login failed: Invalid password - {user.email}")
             raise HTTPException(status_code=401, detail="Invalid credentials")
         
         # Generate token
-        access_token = create_access_token(data={"sub": user.email, "id": db_user['id']})
+        access_token = create_access_token(data={"sub": user.email, "id": db_user.id})
         
         logger.info(f"User logged in successfully: {user.email}")
         
         return {
             "access_token": access_token,
             "token_type": "bearer",
-            "user_id": db_user['id'],
-            "email": db_user['email']
+            "user_id": db_user.id,
+            "email": db_user.email
         }
     
     except HTTPException:
@@ -299,30 +286,27 @@ async def create_project(
 ):
     """Create a new construction project"""
     try:
-        from sqlalchemy import text
-        result = db.execute(
-            text("""INSERT INTO projects (user_id, project_name, project_type, location, area_sqft, status)
-               VALUES (:user_id, :project_name, :project_type, :location, :area_sqft, :status)
-               RETURNING id"""),
-            {
-                "user_id": current_user['id'],
-                "project_name": project.project_name,
-                "project_type": project.project_type,
-                "location": project.location,
-                "area_sqft": project.area_sqft,
-                "status": "created"
-            }
+        # Create project (ORM)
+        new_project = Project(
+            user_id=current_user['id'],
+            project_name=project.project_name,
+            project_type=project.project_type,
+            location=project.location,
+            area_sqft=project.area_sqft,
+            status="created"
         )
-        project_id = result.fetchone()[0]
+        db.add(new_project)
         db.commit()
+        db.refresh(new_project)
         
-        # Fetch created project
-        created_project = db.execute(
-            text("SELECT * FROM projects WHERE id = :id"),
-            {"id": project_id}
-        ).fetchone()
-        
-        return ProjectResponse(**dict(created_project._mapping))
+        return ProjectResponse(
+            id=new_project.id,
+            project_name=new_project.project_name,
+            project_type=new_project.project_type,
+            location=new_project.location,
+            status=new_project.status,
+            created_at=new_project.created_at
+        )
     
     except Exception as e:
         db.rollback()
@@ -336,13 +320,22 @@ async def list_projects(
 ):
     """List all projects for current user"""
     try:
-        from sqlalchemy import text
-        projects = db.execute(
-            text("SELECT * FROM projects WHERE user_id = :user_id ORDER BY created_at DESC"),
-            {"user_id": current_user['id']}
-        ).fetchall()
+        # Query projects (ORM)
+        projects = db.query(Project).filter(
+            Project.user_id == current_user['id']
+        ).order_by(Project.created_at.desc()).all()
         
-        return [dict(p._mapping) for p in projects]
+        return [{
+            "id": p.id,
+            "user_id": p.user_id,
+            "project_name": p.project_name,
+            "project_type": p.project_type,
+            "location": p.location,
+            "area_sqft": p.area_sqft,
+            "status": p.status,
+            "created_at": p.created_at,
+            "updated_at": p.updated_at
+        } for p in projects]
     
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -356,31 +349,43 @@ async def get_project(
 ):
     """Get detailed information about a specific project"""
     try:
-        from sqlalchemy import text
-        project = db.execute(
-            text("SELECT * FROM projects WHERE id = :id AND user_id = :user_id"),
-            {"id": project_id, "user_id": current_user['id']}
-        ).fetchone()
+        # Query project (ORM)
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user['id']
+        ).first()
         
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
-        # Get drawings
-        drawings = db.execute(
-            text("SELECT * FROM drawings WHERE project_id = :project_id"),
-            {"project_id": project_id}
-        ).fetchall()
-        
-        # Get elements count (temporarily disabled)
-        # quantities = db.execute(
-        #     text("SELECT COUNT(*) as count FROM quantities WHERE project_id = :project_id"),
-        #     {"project_id": project_id}
-        # ).fetchone()
+        # Get drawings (ORM with relationship)
+        drawings = db.query(Drawing).filter(
+            Drawing.project_id == project_id
+        ).all()
         
         return {
-            "project": dict(project._mapping),
-            "drawings": [dict(d._mapping) for d in drawings],
-            "quantities_count": 0
+            "project": {
+                "id": project.id,
+                "user_id": project.user_id,
+                "project_name": project.project_name,
+                "project_type": project.project_type,
+                "location": project.location,
+                "area_sqft": project.area_sqft,
+                "status": project.status,
+                "created_at": project.created_at,
+                "updated_at": project.updated_at
+            },
+            "drawings": [{
+                "id": d.id,
+                "project_id": d.project_id,
+                "file_name": d.file_name,
+                "file_url": d.file_url,
+                "drawing_type": d.drawing_type,
+                "status": d.status,
+                "uploaded_at": d.uploaded_at,
+                "processed_at": d.processed_at
+            } for d in drawings],
+            "quantities_count": sum(len(d.elements) for d in drawings)
         }
     
     except HTTPException:
@@ -405,13 +410,11 @@ async def upload_drawings(
 ):
     """Upload construction drawings (PDF, DWG, PNG, JPG)"""
     try:
-        from sqlalchemy import text
-        
-        # Verify project ownership
-        project = db.execute(
-            text("SELECT * FROM projects WHERE id = :id AND user_id = :user_id"),
-            {"id": project_id, "user_id": current_user['id']}
-        ).fetchone()
+        # Verify project ownership (ORM)
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user['id']
+        ).first()
         
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
@@ -464,17 +467,14 @@ async def upload_drawings(
             
             logger.info(f"File uploaded: {file.filename} ({file_size} bytes) for project {project_id}")
             
-            # Store in database
-            db.execute(
-                text("""INSERT INTO drawings (project_id, file_name, file_url, drawing_type)
-                   VALUES (:project_id, :file_name, :file_url, :drawing_type)"""),
-                {
-                    "project_id": project_id,
-                    "file_name": file.filename,
-                    "file_url": file_path,
-                    "drawing_type": "plan"
-                }
+            # Store in database (ORM)
+            new_drawing = Drawing(
+                project_id=project_id,
+                file_name=file.filename,
+                file_url=file_path,
+                drawing_type="plan"
             )
+            db.add(new_drawing)
             
             uploaded_files.append({
                 "filename": file.filename,
@@ -485,11 +485,8 @@ async def upload_drawings(
         db.commit()
         logger.info(f"Successfully uploaded {len(uploaded_files)} files for project {project_id}")
         
-        # Update project status
-        db.execute(
-            text("UPDATE projects SET status = :status WHERE id = :id"),
-            {"status": "processing", "id": project_id}
-        )
+        # Update project status (ORM)
+        project.status = "processing"
         db.commit()
         
         # AI processing temporarily disabled

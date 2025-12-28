@@ -24,6 +24,7 @@ def init_tables():
         email VARCHAR(255) UNIQUE NOT NULL,
         full_name VARCHAR(255) NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        subscription_tier VARCHAR(50) DEFAULT 'trial',
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 

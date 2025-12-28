@@ -74,9 +74,6 @@ export default function DashboardPage() {
               <Link href="/projects" className="text-gray-700 hover:text-blue-600">
                 Projects
               </Link>
-              <Link href="/settings" className="text-gray-700 hover:text-blue-600">
-                Settings
-              </Link>
               <div className="relative">
                 <button className="flex items-center space-x-2 text-gray-700">
                   <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white font-semibold">
@@ -152,16 +149,6 @@ export default function DashboardPage() {
               <div>
                 <div className="font-semibold">Upload Drawings</div>
                 <div className="text-sm text-gray-600">Add to existing project</div>
-              </div>
-            </Link>
-            <Link
-              href="/analytics"
-              className="flex items-center space-x-3 p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-600 hover:bg-blue-50 transition-colors"
-            >
-              <TrendingUp className="w-6 h-6 text-blue-600" />
-              <div>
-                <div className="font-semibold">View Analytics</div>
-                <div className="text-sm text-gray-600">Track performance</div>
               </div>
             </Link>
           </div>

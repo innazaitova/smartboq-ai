@@ -70,11 +70,13 @@ export default function LoginPage() {
                 onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                 placeholder="••••••••"
               />
+              {/* Forgot password temporarily disabled
               <div className="mt-2 text-right">
                 <Link href="/forgot-password" className="text-sm text-blue-600 hover:underline">
                   Forgot password?
                 </Link>
               </div>
+              */}
             </div>
 
             {error && (

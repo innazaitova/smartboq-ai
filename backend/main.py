@@ -423,6 +423,157 @@ async def get_project(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.put("/api/projects/{project_id}")
+@limiter.limit("20/minute")
+async def update_project(
+    request: Request,
+    project_id: int,
+    project_update: ProjectCreate,
+    current_user = Depends(get_current_user),
+    db = Depends(get_db)
+):
+    """Update project details"""
+    try:
+        # Get project (ORM)
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user['id']
+        ).first()
+        
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Update fields
+        project.project_name = project_update.project_name
+        project.project_type = project_update.project_type
+        project.location = project_update.location
+        project.area_sqft = project_update.area_sqft
+        project.updated_at = datetime.now()
+        
+        db.commit()
+        db.refresh(project)
+        
+        logger.info(f"Project {project_id} updated by user {current_user['id']}")
+        
+        return {
+            "id": project.id,
+            "project_name": project.project_name,
+            "project_type": project.project_type,
+            "location": project.location,
+            "area_sqft": project.area_sqft,
+            "status": project.status,
+            "created_at": project.created_at,
+            "updated_at": project.updated_at
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/projects/{project_id}")
+@limiter.limit("10/minute")
+async def delete_project(
+    request: Request,
+    project_id: int,
+    current_user = Depends(get_current_user),
+    db = Depends(get_db)
+):
+    """Delete a project and all its drawings/elements"""
+    try:
+        # Get project (ORM)
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user['id']
+        ).first()
+        
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        project_name = project.project_name
+        
+        # Delete project (cascade will delete drawings and elements)
+        db.delete(project)
+        db.commit()
+        
+        # Clean up files
+        import shutil
+        file_dir = f"temp_processing/{project_id}"
+        if os.path.exists(file_dir):
+            try:
+                shutil.rmtree(file_dir)
+                logger.info(f"Deleted files for project {project_id}")
+            except Exception as e:
+                logger.warning(f"Failed to delete files for project {project_id}: {str(e)}")
+        
+        logger.info(f"Project {project_id} ({project_name}) deleted by user {current_user['id']}")
+        
+        return {"message": f"Project '{project_name}' deleted successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/api/projects/{project_id}/drawings/{drawing_id}")
+@limiter.limit("10/minute")
+async def delete_drawing(
+    request: Request,
+    project_id: int,
+    drawing_id: int,
+    current_user = Depends(get_current_user),
+    db = Depends(get_db)
+):
+    """Delete a specific drawing from a project"""
+    try:
+        # Verify project ownership
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user['id']
+        ).first()
+        
+        if not project:
+            raise HTTPException(status_code=404, detail="Project not found")
+        
+        # Get drawing
+        drawing = db.query(Drawing).filter(
+            Drawing.id == drawing_id,
+            Drawing.project_id == project_id
+        ).first()
+        
+        if not drawing:
+            raise HTTPException(status_code=404, detail="Drawing not found")
+        
+        file_name = drawing.file_name
+        file_path = drawing.file_url
+        
+        # Delete drawing (cascade will delete elements)
+        db.delete(drawing)
+        db.commit()
+        
+        # Delete file
+        if os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+                logger.info(f"Deleted file: {file_path}")
+            except Exception as e:
+                logger.warning(f"Failed to delete file {file_path}: {str(e)}")
+        
+        logger.info(f"Drawing {drawing_id} ({file_name}) deleted from project {project_id}")
+        
+        return {"message": f"Drawing '{file_name}' deleted successfully"}
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ============================================================================
 # DRAWING UPLOAD ENDPOINTS
 # ============================================================================

@@ -1,0 +1,74 @@
+RESIDENTIAL BUILDING - FLOOR PLAN
+PROJECT: Sample Construction Project
+
+STRUCTURAL ELEMENTS:
+
+COLUMNS (12 nos):
+- C1 to C4: 300mm x 300mm RCC columns @ Grid A1, A4, D1, D4
+- C5 to C8: 230mm x 450mm RCC columns @ Grid B2, B3, C2, C3
+- C9 to C12: 300mm x 300mm RCC columns @ corners
+
+BEAMS:
+- B1: 230mm x 450mm, Length 6000mm, Span: Grid A1-A4 (Primary beam)
+- B2: 230mm x 450mm, Length 6000mm, Span: Grid D1-D4 (Primary beam)
+- B3: 230mm x 380mm, Length 4500mm, Span: Grid A1-D1 (Secondary beam)
+- B4: 230mm x 380mm, Length 4500mm, Span: Grid A4-D4 (Secondary beam)
+- B5 to B8: 230mm x 300mm, Length 3000mm (Cross beams)
+
+SLAB:
+- Ground floor slab: 150mm thick RCC
+- Total slab area: 180 square meters
+- Reinforcement: 12mm @ 150mm c/c both ways
+
+WALLS:
+- External walls: 230mm thick brick masonry, Height 3000mm
+  Total length: 48 meters
+- Internal walls: 115mm thick brick masonry, Height 3000mm
+  Total length: 32 meters
+- Partition walls: 100mm AAC blocks, Height 2700mm
+  Total length: 15 meters
+
+DOORS (6 nos):
+- Main entrance door: 1200mm x 2100mm, Hardwood frame (1 no)
+- Bedroom doors: 900mm x 2100mm, Flush doors (3 nos)
+- Bathroom doors: 750mm x 2100mm, PVC doors (2 nos)
+
+WINDOWS (5 nos):
+- Living room windows: 1500mm x 1200mm, Aluminum frame (2 nos)
+- Bedroom windows: 1200mm x 1200mm, Aluminum frame (3 nos)
+
+FOUNDATION:
+- Isolated footings: 1500mm x 1500mm x 600mm depth (12 nos)
+- Plinth beam: 230mm x 300mm continuous
+
+FLOORING:
+- Living/Dining area: Vitrified tiles, 600mm x 600mm
+  Area: 85 square meters
+- Bedrooms: Ceramic tiles, 400mm x 400mm
+  Area: 60 square meters
+- Bathrooms: Anti-skid tiles, 300mm x 300mm
+  Area: 15 square meters
+
+PAINTING:
+- External walls: Weather proof paint
+  Area: 320 square meters
+- Internal walls: Emulsion paint
+  Area: 450 square meters
+
+PLUMBING:
+- Water supply lines: CPVC pipes
+- Drainage: PVC pipes, 110mm diameter
+- Sanitary fixtures: 8 nos (WC, basin, sink)
+
+ELECTRICAL:
+- Light points: 24 nos
+- Power points: 18 nos
+- AC points: 3 nos
+- Distribution board: 12 way MCB board
+
+NOTES:
+1. All dimensions are in millimeters unless specified
+2. RCC work as per IS 456:2000
+3. Brick masonry as per IS 1077:1992
+4. Concrete grade: M25 for structural elements
+5. Steel grade: Fe 500 for reinforcement

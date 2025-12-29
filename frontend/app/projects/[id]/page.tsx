@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { useAuthStore } from '../../../lib/store'
 import Link from 'next/link'
-import { ArrowLeft, Upload, FileText, Download, Clock, DollarSign, AlertCircle } from 'lucide-react'
+import { ArrowLeft, Upload, FileText, Download, Clock, DollarSign, AlertCircle, Edit2, Trash2, RefreshCw } from 'lucide-react'
 import { projectAPI } from '../../../lib/api'
 import toast from 'react-hot-toast'
 
@@ -16,6 +16,14 @@ export default function ProjectDetailPage() {
   const [project, setProject] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [uploading, setUploading] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showDeleteModal, setShowDeleteModal] = useState(false)
+  const [editForm, setEditForm] = useState({
+    project_name: '',
+    project_type: '',
+    location: '',
+    area_sqft: 0
+  })
 
   useEffect(() => {
     checkAuth()
@@ -33,11 +41,92 @@ export default function ProjectDetailPage() {
     try {
       const data = await projectAPI.getProject(projectId)
       setProject(data)
+      setEditForm({
+        project_name: data.project.project_name,
+        project_type: data.project.project_type,
+        location: data.project.location,
+        area_sqft: data.project.area_sqft
+      })
     } catch (error: any) {
       toast.error('Failed to load project')
       router.push('/projects')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${apiUrl}/api/projects/${projectId}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(editForm)
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Update failed')
+      }
+
+      toast.success('Project updated successfully!')
+      setShowEditModal(false)
+      loadProject()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to update project')
+    }
+  }
+
+  const handleDelete = async () => {
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${apiUrl}/api/projects/${projectId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Delete failed')
+      }
+
+      toast.success('Project deleted successfully!')
+      router.push('/projects')
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete project')
+    }
+  }
+
+  const handleDeleteDrawing = async (drawingId: number) => {
+    if (!confirm('Are you sure you want to delete this drawing?')) return
+    
+    try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+      const token = localStorage.getItem('token')
+      const response = await fetch(`${apiUrl}/api/projects/${projectId}/drawings/${drawingId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      })
+
+      if (!response.ok) {
+        const error = await response.json()
+        throw new Error(error.detail || 'Delete failed')
+      }
+
+      toast.success('Drawing deleted successfully!')
+      loadProject()
+    } catch (error: any) {
+      toast.error(error.message || 'Failed to delete drawing')
     }
   }
 
@@ -132,9 +221,27 @@ export default function ProjectDetailPage() {
               <h1 className="text-3xl font-bold text-gray-900">{project.project.project_name}</h1>
               <p className="text-gray-600 mt-2">{project.project.project_type} • {project.project.location}</p>
             </div>
-            <span className={`px-4 py-2 rounded-full text-sm font-semibold ${statusColors[project.project.status]}`}>
-              {project.project.status}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className={`px-4 py-2 rounded-full text-sm font-semibold ${statusColors[project.project.status]}`}>
+                {project.project.status}
+              </span>
+              <button
+                onClick={() => setShowEditModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition"
+                title="Edit Project"
+              >
+                <Edit2 className="w-4 h-4" />
+                Edit
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-red-100 text-red-700 rounded-lg hover:bg-red-200 transition"
+                title="Delete Project"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete
+              </button>
+            </div>
           </div>
         </div>
 
@@ -166,38 +273,43 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
-        {/* Upload Section */}
-        {project.project.status === 'created' && (
-          <div className="bg-white rounded-lg shadow p-8 mb-8">
-            <h2 className="text-xl font-semibold mb-4">Upload Construction Drawings</h2>
-            <p className="text-gray-600 mb-6">
-              Upload your construction drawings (PDF, DWG, DXF, or images) to start AI analysis
-            </p>
-            
-            <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-600 transition-colors">
-              <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Drop files here or click to browse</h3>
-              <p className="text-gray-600 mb-4">Supports PDF, DWG, DXF, PNG, JPG (Max 50MB per file)</p>
-              <label className="inline-block">
-                <input
-                  type="file"
-                  multiple
-                  accept=".pdf,.dwg,.dxf,.png,.jpg,.jpeg"
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  disabled={uploading}
-                />
-                <span className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 cursor-pointer inline-block">
-                  {uploading ? 'Uploading...' : 'Select Files'}
-                </span>
-              </label>
+        {/* Upload Section - Always show for re-uploading */}
+        <div className="bg-white rounded-lg shadow p-8 mb-8">
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h2 className="text-xl font-semibold">Upload Construction Drawings</h2>
+              <p className="text-gray-600 mt-1">
+                {project.drawings?.length > 0 ? 'Add more drawings or re-upload' : 'Upload your construction drawings to start AI analysis'}
+              </p>
             </div>
+            {project.drawings?.length > 0 && (
+              <RefreshCw className="w-6 h-6 text-blue-600" />
+            )}
           </div>
-        )}
+            
+          <div className="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-600 transition-colors">
+            <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold mb-2">Drop files here or click to browse</h3>
+            <p className="text-gray-600 mb-4">Supports PDF, PNG, JPG (Max 25MB per file, 10 files max)</p>
+            <label className="inline-block">
+              <input
+                type="file"
+                multiple
+                accept=".pdf,.png,.jpg,.jpeg"
+                onChange={handleFileUpload}
+                className="hidden"
+                disabled={uploading}
+              />
+              <span className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 cursor-pointer inline-block">
+                {uploading ? 'Uploading...' : 'Select Files'}
+              </span>
+            </label>
+          </div>
+        </div>
 
         {/* Drawings List */}
         <div className="bg-white rounded-lg shadow p-6 mb-8">
-          <h2 className="text-xl font-semibold mb-4">Uploaded Drawings</h2>
+          <h2 className="text-xl font-semibold mb-4">Uploaded Drawings ({project.drawings?.length || 0})</h2>
           {project.drawings?.length === 0 ? (
             <div className="text-center py-8 text-gray-600">
               <FileText className="w-12 h-12 text-gray-300 mx-auto mb-3" />
@@ -206,17 +318,25 @@ export default function ProjectDetailPage() {
           ) : (
             <div className="space-y-3">
               {project.drawings?.map((drawing: any) => (
-                <div key={drawing.id} className="flex items-center justify-between p-4 border rounded-lg">
+                <div key={drawing.id} className="flex items-center justify-between p-4 border rounded-lg hover:bg-gray-50 transition">
                   <div className="flex items-center gap-3">
                     <FileText className="w-5 h-5 text-blue-600" />
                     <div>
                       <div className="font-semibold">{drawing.file_name}</div>
-                      <div className="text-sm text-gray-600">{drawing.file_type}</div>
+                      <div className="text-sm text-gray-600">
+                        {drawing.drawing_type} • Status: {drawing.status}
+                      </div>
                     </div>
                   </div>
-                  <button className="text-blue-600 hover:underline">
-                    <Download className="w-5 h-5" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button 
+                      onClick={() => handleDeleteDrawing(drawing.id)}
+                      className="text-red-600 hover:bg-red-50 p-2 rounded transition"
+                      title="Delete drawing"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -292,6 +412,125 @@ export default function ProjectDetailPage() {
           </div>
         )}
       </main>
+
+      {/* Edit Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-2xl w-full p-6">
+            <h2 className="text-2xl font-bold mb-6">Edit Project</h2>
+            <form onSubmit={handleUpdate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Project Name *
+                </label>
+                <input
+                  type="text"
+                  value={editForm.project_name}
+                  onChange={(e) => setEditForm({...editForm, project_name: e.target.value})}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Project Type *
+                </label>
+                <select
+                  value={editForm.project_type}
+                  onChange={(e) => setEditForm({...editForm, project_type: e.target.value})}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  required
+                >
+                  <option value="">Select Type</option>
+                  <option value="Residential">Residential</option>
+                  <option value="Commercial">Commercial</option>
+                  <option value="Industrial">Industrial</option>
+                  <option value="Infrastructure">Infrastructure</option>
+                  <option value="Renovation">Renovation</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Location *
+                </label>
+                <input
+                  type="text"
+                  value={editForm.location}
+                  onChange={(e) => setEditForm({...editForm, location: e.target.value})}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Area (sq ft)
+                </label>
+                <input
+                  type="number"
+                  value={editForm.area_sqft}
+                  onChange={(e) => setEditForm({...editForm, area_sqft: parseFloat(e.target.value)})}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-600 focus:border-transparent"
+                  min="0"
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-semibold hover:bg-blue-700 transition"
+                >
+                  Save Changes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg max-w-md w-full p-6">
+            <div className="flex items-start gap-4 mb-6">
+              <div className="bg-red-100 p-3 rounded-full">
+                <AlertCircle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">Delete Project?</h2>
+                <p className="text-gray-600">
+                  This will permanently delete "{project.project.project_name}" and all its drawings.
+                  This action cannot be undone.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={handleDelete}
+                className="flex-1 bg-red-600 text-white py-3 rounded-lg font-semibold hover:bg-red-700 transition"
+              >
+                Yes, Delete
+              </button>
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-lg font-semibold hover:bg-gray-300 transition"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

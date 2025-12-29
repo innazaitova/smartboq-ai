@@ -1,0 +1,4 @@
+ARCHITECTURAL DRAWING
+Column: 300x300mm @ Grid A1
+Beam: 230x450mm Length 6000mm
+Slab: 150mm thick

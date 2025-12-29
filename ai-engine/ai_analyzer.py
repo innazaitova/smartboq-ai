@@ -257,7 +257,62 @@ For this detail drawing, identify:
         
         Returns:
             Analysis result with detected elements
-        \"\"\"\n        try:\n            prompt = f\"\"\"You are an expert civil engineer analyzing construction drawing text.\nThe following text was extracted from a {drawing_type} drawing.\n\nExtracted Text:\n{text[:3000]}\n\nAnalyze this text and identify ALL construction elements with their specifications.\nReturn ONLY a valid JSON array of objects, each with:\n- type: element type (beam, column, wall, slab, door, window, etc)\n- quantity: number of elements\n- unit: measurement unit\n- dimensions: object with length, width, height/thickness\n- location: position description\n- confidence: confidence score 0-1\n\nExample format:\n[\n  {{\n    \"type\": \"column\",\n    \"quantity\": 4,\n    \"unit\": \"nos\",\n    \"dimensions\": {{\"width\": 300, \"depth\": 300, \"height\": 3000}},\n    \"location\": \"Grid A1, B1, A4, B4\",\n    \"confidence\": 0.9\n  }}\n]\n\nReturn ONLY the JSON array, no other text.\"\"\"\n            \n            response = self.client.chat.completions.create(\n                model=self.model,\n                max_tokens=4096,\n                temperature=0.1,\n                messages=[{\"role\": \"user\", \"content\": prompt}]\n            )\n            \n            result_text = response.choices[0].message.content\n            elements = self._parse_ai_response(result_text)\n            \n            return {\n                \"success\": True,\n                \"elements\": elements,\n                \"raw_response\": result_text,\n                \"confidence\": self._calculate_confidence(elements),\n                \"method\": \"text_analysis\"\n            }\n            \n        except Exception as e:\n            logger.error(f\"Text analysis failed: {str(e)}\")\n            return {\n                \"success\": False,\n                \"error\": str(e),\n                \"elements\": []\n            }
+        """
+        try:
+            prompt = f"""You are an expert civil engineer analyzing construction drawing text.
+The following text was extracted from a {drawing_type} drawing.
+
+Extracted Text:
+{text[:3000]}
+
+Analyze this text and identify ALL construction elements with their specifications.
+Return ONLY a valid JSON array of objects, each with:
+- type: element type (beam, column, wall, slab, door, window, etc)
+- quantity: number of elements
+- unit: measurement unit
+- dimensions: object with length, width, height/thickness
+- location: position description
+- confidence: confidence score 0-1
+
+Example format:
+[
+  {{
+    "type": "column",
+    "quantity": 4,
+    "unit": "nos",
+    "dimensions": {{"width": 300, "depth": 300, "height": 3000}},
+    "location": "Grid A1, B1, A4, B4",
+    "confidence": 0.9
+  }}
+]
+
+Return ONLY the JSON array, no other text."""
+            
+            response = self.client.chat.completions.create(
+                model=self.model,
+                max_tokens=4096,
+                temperature=0.1,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            
+            result_text = response.choices[0].message.content
+            elements = self._parse_ai_response(result_text)
+            
+            return {
+                "success": True,
+                "elements": elements,
+                "raw_response": result_text,
+                "confidence": self._calculate_confidence(elements),
+                "method": "text_analysis"
+            }
+            
+        except Exception as e:
+            logger.error(f"Text analysis failed: {str(e)}")
+            return {
+                "success": False,
+                "error": str(e),
+                "elements": []
+            }
     
     def batch_analyze_drawings(self, drawing_paths: List[str]) -> List[Dict[str, Any]]:
         """

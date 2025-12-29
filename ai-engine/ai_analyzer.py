@@ -7,6 +7,9 @@ import os
 import json
 from typing import List, Dict, Any
 import base64
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class AIAnalyzer:
@@ -18,18 +21,43 @@ class AIAnalyzer:
         )
         self.model = "gpt-4o"
     
-    def analyze_drawing(self, image_path: str, drawing_type: str = "plan") -> Dict[str, Any]:
+    def analyze_drawing(self, image_path: str, drawing_type: str = "plan", processed_data: Dict[str, Any] = None) -> Dict[str, Any]:
         """
         Analyze a construction drawing and extract elements
         
         Args:
-            image_path: Path to the drawing image file
+            image_path: Path to the drawing file (PDF or image)
             drawing_type: Type of drawing (plan, elevation, section, detail)
+            processed_data: Pre-processed data from DrawingProcessor
         
         Returns:
             Dictionary containing detected elements and their properties
         """
         try:
+            # Handle PDF files - convert first page to image
+            if image_path.lower().endswith('.pdf'):
+                from pypdf import PdfReader
+                from PIL import Image
+                import io
+                
+                reader = PdfReader(image_path)
+                if len(reader.pages) == 0:
+                    return {"success": False, "error": "PDF has no pages", "elements": []}
+                
+                # For PDF, use text extraction if available
+                page = reader.pages[0]
+                text = page.extract_text() or ""
+                
+                # If we have extracted text, use it for analysis
+                if text and len(text.strip()) > 100:
+                    return self._analyze_from_text(text, drawing_type, processed_data)
+                else:
+                    return {
+                        "success": False, 
+                        "error": "PDF text extraction insufficient - need image conversion",
+                        "elements": []
+                    }
+            
             # Read and encode image
             with open(image_path, "rb") as f:
                 image_data = base64.standard_b64encode(f.read()).decode("utf-8")
@@ -217,6 +245,19 @@ For this detail drawing, identify:
         # Average confidence of all elements
         confidences = [elem.get('confidence', 0.7) for elem in elements]
         return sum(confidences) / len(confidences) if confidences else 0.0
+    
+    def _analyze_from_text(self, text: str, drawing_type: str, processed_data: Dict[str, Any] = None) -> Dict[str, Any]:
+        """
+        Analyze drawing from extracted text (for PDFs without images)
+        
+        Args:
+            text: Extracted text from PDF
+            drawing_type: Type of drawing
+            processed_data: Additional processed data
+        
+        Returns:
+            Analysis result with detected elements
+        \"\"\"\n        try:\n            prompt = f\"\"\"You are an expert civil engineer analyzing construction drawing text.\nThe following text was extracted from a {drawing_type} drawing.\n\nExtracted Text:\n{text[:3000]}\n\nAnalyze this text and identify ALL construction elements with their specifications.\nReturn ONLY a valid JSON array of objects, each with:\n- type: element type (beam, column, wall, slab, door, window, etc)\n- quantity: number of elements\n- unit: measurement unit\n- dimensions: object with length, width, height/thickness\n- location: position description\n- confidence: confidence score 0-1\n\nExample format:\n[\n  {{\n    \"type\": \"column\",\n    \"quantity\": 4,\n    \"unit\": \"nos\",\n    \"dimensions\": {{\"width\": 300, \"depth\": 300, \"height\": 3000}},\n    \"location\": \"Grid A1, B1, A4, B4\",\n    \"confidence\": 0.9\n  }}\n]\n\nReturn ONLY the JSON array, no other text.\"\"\"\n            \n            response = self.client.chat.completions.create(\n                model=self.model,\n                max_tokens=4096,\n                temperature=0.1,\n                messages=[{\"role\": \"user\", \"content\": prompt}]\n            )\n            \n            result_text = response.choices[0].message.content\n            elements = self._parse_ai_response(result_text)\n            \n            return {\n                \"success\": True,\n                \"elements\": elements,\n                \"raw_response\": result_text,\n                \"confidence\": self._calculate_confidence(elements),\n                \"method\": \"text_analysis\"\n            }\n            \n        except Exception as e:\n            logger.error(f\"Text analysis failed: {str(e)}\")\n            return {\n                \"success\": False,\n                \"error\": str(e),\n                \"elements\": []\n            }
     
     def batch_analyze_drawings(self, drawing_paths: List[str]) -> List[Dict[str, Any]]:
         """

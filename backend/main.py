@@ -518,8 +518,8 @@ async def upload_drawings(
         project.status = "processing"
         db.commit()
         
-        # Trigger AI processing in background
-        background_tasks.add_task(process_project_drawings, project_id, db)
+        # Trigger AI processing in background (create new session)
+        background_tasks.add_task(process_project_drawings, project_id)
         
         return {
             "message": f"{len(files)} drawing(s) uploaded successfully",
@@ -742,8 +742,12 @@ async def download_boq(
 # BACKGROUND TASKS
 # ============================================================================
 
-async def process_project_drawings(project_id: int, db_session: Session):
+async def process_project_drawings(project_id: int):
     """Background task to process drawings with AI"""
+    # Create new database session for background task
+    from database import get_db
+    db_session = next(get_db())
+    
     try:
         logger.info(f"Starting AI analysis for project {project_id}...")
         
@@ -763,12 +767,23 @@ async def process_project_drawings(project_id: int, db_session: Session):
             logger.info(f"Analyzing drawing: {drawing.file_name}")
             
             try:
-                # Process with drawing processor
-                processed_data = drawing_processor.process_file(drawing.file_url)
+                # Get absolute file path
+                file_path = os.path.abspath(drawing.file_url)
                 
-                # Analyze with AI
+                if not os.path.exists(file_path):
+                    logger.error(f"File not found: {file_path}")
+                    drawing.status = "error"
+                    db_session.commit()
+                    continue
+                
+                # Process with drawing processor to extract text/metadata
+                processed_data = drawing_processor.process_file(file_path)
+                logger.info(f"Processed {drawing.file_name}: {processed_data.get('file_type')} with {processed_data.get('num_pages')} pages")
+                
+                # For PDF files, we need to convert pages to images for AI analysis
+                # For now, pass the file path directly - AI analyzer will handle it
                 result = ai_analyzer.analyze_drawing(
-                    drawing.file_url,
+                    file_path,
                     drawing.drawing_type,
                     processed_data
                 )

@@ -1,19 +1,27 @@
 'use client'
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuthStore } from '../../lib/store'
 import toast from 'react-hot-toast'
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { login, isLoading, error } = useAuthStore()
   
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   })
+
+  // Show session expired message if redirected with parameter
+  useEffect(() => {
+    if (searchParams.get('session_expired') === 'true') {
+      toast.error('Your session has expired. Please login again.')
+    }
+  }, [searchParams])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()

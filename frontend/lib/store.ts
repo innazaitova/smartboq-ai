@@ -32,6 +32,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ isLoading: true, error: null })
       await authAPI.login(email, password)
       const user = await authAPI.getCurrentUser()
+      // Persist user data for faster auth restoration
+      localStorage.setItem('user', JSON.stringify(user))
       set({ user, isAuthenticated: true, isLoading: false })
     } catch (error: any) {
       set({ 
@@ -48,6 +50,8 @@ export const useAuthStore = create<AuthState>((set) => ({
       await authAPI.register(email, password, fullName)
       await authAPI.login(email, password)
       const user = await authAPI.getCurrentUser()
+      // Persist user data for faster auth restoration
+      localStorage.setItem('user', JSON.stringify(user))
       set({ user, isAuthenticated: true, isLoading: false })
     } catch (error: any) {
       set({ 
@@ -60,6 +64,7 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   logout: () => {
     authAPI.logout()
+    localStorage.removeItem('user')
     set({ user: null, isAuthenticated: false })
   },
 
@@ -67,13 +72,42 @@ export const useAuthStore = create<AuthState>((set) => ({
     try {
       const token = localStorage.getItem('token')
       if (!token) {
-        set({ isLoading: false, isAuthenticated: false })
+        localStorage.removeItem('user')
+        set({ isLoading: false, isAuthenticated: false, user: null })
         return
       }
-      const user = await authAPI.getCurrentUser()
-      set({ user, isAuthenticated: true, isLoading: false })
+
+      // Restore from localStorage immediately for instant UI
+      const cachedUser = localStorage.getItem('user')
+      if (cachedUser) {
+        try {
+          const user = JSON.parse(cachedUser)
+          set({ user, isAuthenticated: true, isLoading: false })
+        } catch (e) {
+          // Invalid cached data, clear it
+          localStorage.removeItem('user')
+        }
+      }
+
+      // Validate token with API in background
+      try {
+        const user = await authAPI.getCurrentUser()
+        localStorage.setItem('user', JSON.stringify(user))
+        set({ user, isAuthenticated: true, isLoading: false })
+      } catch (error: any) {
+        // Only logout on 401 (invalid token), not on network errors
+        if (error.response?.status === 401) {
+          localStorage.removeItem('token')
+          localStorage.removeItem('user')
+          set({ isLoading: false, isAuthenticated: false, user: null })
+        }
+        // For other errors (network, etc), keep user logged in with cached data
+      }
     } catch (error) {
-      set({ isLoading: false, isAuthenticated: false })
+      // Only clear on critical errors
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      set({ isLoading: false, isAuthenticated: false, user: null })
     }
   },
 }))

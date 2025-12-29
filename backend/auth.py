@@ -17,7 +17,7 @@ if not SECRET_KEY:
     raise ValueError("JWT_SECRET_KEY environment variable must be set in production")
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 1440  # 24 hours
+ACCESS_TOKEN_EXPIRE_MINUTES = 43200  # 30 days for production stability
 
 # Password hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")

@@ -29,9 +29,18 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Redirect to login if unauthorized
+      // Only redirect if we're not already on login/signup/public pages
+      const publicPaths = ['/', '/login', '/signup', '/features', '/pricing', '/about', '/contact', '/demo', '/terms', '/privacy']
+      const currentPath = typeof window !== 'undefined' ? window.location.pathname : ''
+      
+      // Clear auth data
       localStorage.removeItem('token')
-      window.location.href = '/login'
+      localStorage.removeItem('user')
+      
+      // Only redirect if on protected page
+      if (!publicPaths.includes(currentPath) && !currentPath.startsWith('/api/auth/')) {
+        window.location.href = '/login?session_expired=true'
+      }
     }
     return Promise.reject(error)
   }

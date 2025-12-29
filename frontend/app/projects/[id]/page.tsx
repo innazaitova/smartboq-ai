@@ -344,17 +344,99 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* BOQ Section */}
-        {project.project.status === 'completed' && (
+        {project.project.status === 'completed' && project.quantities_count > 0 && (
           <div className="bg-white rounded-lg shadow p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold">Bill of Quantities</h2>
-              <button className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 flex items-center gap-2">
+            <div className="flex justify-between items-center mb-6">
+              <div>
+                <h2 className="text-xl font-semibold">Bill of Quantities</h2>
+                <p className="text-gray-600 mt-1">{project.quantities_count} elements detected</p>
+              </div>
+              <button 
+                onClick={async () => {
+                  try {
+                    toast.loading('Generating BOQ...')
+                    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+                    const token = localStorage.getItem('token')
+                    const response = await fetch(`${apiUrl}/api/projects/${projectId}/boq/download?format=excel`, {
+                      method: 'GET',
+                      headers: {
+                        'Authorization': `Bearer ${token}`
+                      }
+                    })
+
+                    if (!response.ok) {
+                      const error = await response.json()
+                      throw new Error(error.detail || 'Failed to generate BOQ')
+                    }
+
+                    // Download file
+                    const blob = await response.blob()
+                    const url = window.URL.createObjectURL(blob)
+                    const a = document.createElement('a')
+                    a.href = url
+                    a.download = `${project.project.project_name}_BOQ.xlsx`
+                    document.body.appendChild(a)
+                    a.click()
+                    window.URL.revokeObjectURL(url)
+                    document.body.removeChild(a)
+                    
+                    toast.dismiss()
+                    toast.success('BOQ downloaded successfully!')
+                  } catch (error: any) {
+                    toast.dismiss()
+                    toast.error(error.message || 'Failed to download BOQ')
+                  }
+                }}
+                className="bg-blue-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-blue-700 flex items-center gap-2 transition"
+              >
                 <Download className="w-5 h-5" />
-                Download BOQ
+                Download Excel BOQ
               </button>
             </div>
-            <div className="text-center py-12 text-gray-600">
-              <p>BOQ preview and download functionality coming soon</p>
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-8 text-center">
+              <div className="max-w-2xl mx-auto">
+                <FileText className="w-16 h-16 text-blue-600 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-gray-900 mb-2">Your BOQ is Ready!</h3>
+                <p className="text-gray-700 mb-4">
+                  Click the button above to download a professional Excel spreadsheet with all detected quantities, 
+                  including columns, beams, walls, doors, windows, and other construction elements.
+                </p>
+                <div className="grid grid-cols-3 gap-4 mt-6 text-sm">
+                  <div className="bg-white p-4 rounded-lg">
+                    <div className="font-semibold text-blue-600 text-2xl mb-1">{project.quantities_count}</div>
+                    <div className="text-gray-600">Elements</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg">
+                    <div className="font-semibold text-blue-600 text-2xl mb-1">{project.drawings?.length || 0}</div>
+                    <div className="text-gray-600">Drawings</div>
+                  </div>
+                  <div className="bg-white p-4 rounded-lg">
+                    <div className="font-semibold text-blue-600 text-2xl mb-1">Excel</div>
+                    <div className="text-gray-600">Format</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* No Elements Detected */}
+        {project.project.status === 'completed' && project.quantities_count === 0 && (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6 flex items-start gap-4">
+            <AlertCircle className="w-6 h-6 text-yellow-600 flex-shrink-0" />
+            <div>
+              <h3 className="font-semibold text-yellow-900 mb-2">No Elements Detected</h3>
+              <p className="text-yellow-800 mb-3">
+                The AI couldn't detect any construction elements in your drawings. This might be because:
+              </p>
+              <ul className="list-disc list-inside text-yellow-800 space-y-1 mb-4">
+                <li>The drawings are not construction/architectural plans</li>
+                <li>The drawings lack text specifications or clear dimensions</li>
+                <li>The image quality is too low for analysis</li>
+              </ul>
+              <p className="text-yellow-800">
+                Please try uploading clearer drawings with visible specifications, or upload a PDF with construction text.
+              </p>
             </div>
           </div>
         )}

@@ -848,43 +848,86 @@ async def generate_boq(
 @app.get("/api/projects/{project_id}/boq/download")
 async def download_boq(
     project_id: int,
-    format: str = "excel",  # "excel" or "pdf"
+    format: str = "excel",
     current_user = Depends(get_current_user),
     db = Depends(get_db)
 ):
-    """Download the generated BOQ file"""
+    """Generate and download the BOQ file"""
     try:
-        # Verify project ownership
-        project = db.execute(
-            "SELECT * FROM projects WHERE id = ? AND user_id = ?",
-            (project_id, current_user['id'])
-        ).fetchone()
+        # Verify project ownership (ORM)
+        project = db.query(Project).filter(
+            Project.id == project_id,
+            Project.user_id == current_user['id']
+        ).first()
         
         if not project:
             raise HTTPException(status_code=404, detail="Project not found")
         
-        # Get file path
+        # Get all elements for this project
+        elements = db.query(Element).join(Drawing).filter(
+            Drawing.project_id == project_id
+        ).all()
+        
+        if not elements:
+            raise HTTPException(status_code=404, detail="No elements found. Please upload and process drawings first.")
+        
+        # Prepare data for BOQ
+        project_data = {
+            'id': project.id,
+            'name': project.project_name,
+            'type': project.project_type,
+            'location': project.location,
+            'area_sqft': project.area_sqft,
+            'created_at': project.created_at
+        }
+        
+        # Group elements by type
+        quantities = []
+        for elem in elements:
+            quantities.append({
+                'type': elem.element_type,
+                'quantity': float(elem.quantity) if elem.quantity else 0,
+                'unit': elem.unit,
+                'dimensions': elem.dimensions,
+                'location': elem.location,
+                'unit_cost': float(elem.unit_cost) if elem.unit_cost else 0,
+                'total_cost': float(elem.total_cost) if elem.total_cost else 0
+            })
+        
+        # Create output directory
+        output_dir = f"temp_processing/{project_id}/output"
+        os.makedirs(output_dir, exist_ok=True)
+        
+        # Generate BOQ file
         if format == "excel":
-            file_path = f"outputs/{project_id}/boq.xlsx"
+            file_path = boq_generator.generate_excel(
+                project=project_data,
+                quantities=quantities,
+                cost_items=quantities,
+                region=project.location or "Default",
+                currency="USD",
+                output_dir=output_dir
+            )
             media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        elif format == "pdf":
-            file_path = f"outputs/{project_id}/boq.pdf"
-            media_type = "application/pdf"
+            filename = f"{project.project_name}_BOQ.xlsx"
         else:
-            raise HTTPException(status_code=400, detail="Invalid format")
+            raise HTTPException(status_code=400, detail="Only Excel format is supported currently")
         
         if not os.path.exists(file_path):
-            raise HTTPException(status_code=404, detail="BOQ file not found")
+            raise HTTPException(status_code=500, detail="Failed to generate BOQ file")
+        
+        logger.info(f"BOQ downloaded for project {project_id} by user {current_user['id']}")
         
         return FileResponse(
             file_path,
             media_type=media_type,
-            filename=f"{project['project_name']}_BOQ.{format}"
+            filename=filename
         )
     
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Error generating BOQ for project {project_id}: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

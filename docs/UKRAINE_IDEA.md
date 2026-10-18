@@ -106,3 +106,8 @@ can be reconsidered later.
   "element_type" and meters. Is this mismatch known?
 - Is it OK to add the Ukraine version in my fork and send a pull
   request?
+
+## 5. Related repository
+
+My calculator prototype for finishing works (with hand-checked tests) is in a separate
+repository: https://github.com/innazaitova/ukraine-calculator
